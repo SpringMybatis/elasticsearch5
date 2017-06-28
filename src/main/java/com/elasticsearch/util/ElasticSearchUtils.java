@@ -18,8 +18,8 @@ public class ElasticSearchUtils {
      * @param mapParam Map格式的数据
      * @return
      */
-    public static boolean addDoc(String type, String docId, Map<String, String> mapParam) {
-        return ElasticSearchUtilsImp.addMapDocToIndex(type, docId, mapParam);
+    public static boolean addDoc(String type, String docId, String indexname,Map<String, String> mapParam) {
+        return ElasticSearchUtilsImp.addMapDocToIndex(type, docId,indexname, mapParam);
     }
 
     /**
@@ -29,8 +29,8 @@ public class ElasticSearchUtils {
      * @param mapParam Map格式的数据
      * @return
      */
-    public static boolean addDoc(String type, Map<String, String> mapParam) {
-        return ElasticSearchUtilsImp.addMapDocToIndex(type, null, mapParam);
+    public static boolean addDoc(String type, String indexname,Map<String, String> mapParam) {
+        return ElasticSearchUtilsImp.addMapDocToIndex(type, null,indexname, mapParam);
     }
 
     /**
@@ -41,8 +41,8 @@ public class ElasticSearchUtils {
      * @param methodNameParm 需要将实体中哪些属性作为字段
      * @return
      */
-    public static boolean addDoc(String type, Object entity, String... methodNameParm) {
-        return ElasticSearchUtilsImp.addEntityDoc(type, null, entity, methodNameParm);
+    public static boolean addDoc(String type,String indexname, Object entity, String... methodNameParm) {
+        return ElasticSearchUtilsImp.addEntityDoc(type, null, indexname,entity, methodNameParm);
     }
 
     /**
@@ -54,8 +54,8 @@ public class ElasticSearchUtils {
      * @param methodNameParm 需要将实体中哪些属性作为字段
      * @return
      */
-    public static boolean addDoc(String type, String docId, Object entity, String... methodNameParm) {
-        return ElasticSearchUtilsImp.addEntityDoc(type, docId, entity, methodNameParm);
+    public static boolean addDoc(String type, String docId,String indexname, Object entity, String... methodNameParm) {
+        return ElasticSearchUtilsImp.addEntityDoc(type, docId, indexname,entity, methodNameParm);
     }
 
     /**
@@ -65,8 +65,8 @@ public class ElasticSearchUtils {
      * @param docId 类型中id
      * @return
      */
-    public static boolean deleteDoc(String type, String docId) {
-        return ElasticSearchUtilsImp.deleteDoc(type, docId);
+    public static boolean deleteDoc(String type, String docId,String indexname) {
+        return ElasticSearchUtilsImp.deleteDoc(type, docId,indexname);
     }
 
     /**
@@ -77,8 +77,8 @@ public class ElasticSearchUtils {
      * @param updateParam 需要修改的字段和值
      * @return
      */
-    public static boolean updateDoc(String type, String docId, Map<String, String> updateParam) {
-        return ElasticSearchUtilsImp.updateDoc(type, docId, updateParam);
+    public static boolean updateDoc(String type, String docId, String indexname,Map<String, String> updateParam) {
+        return ElasticSearchUtilsImp.updateDoc(type, docId,indexname, updateParam);
     }
 
     // --------------------以下是各种搜索方法--------------------------
@@ -91,8 +91,8 @@ public class ElasticSearchUtils {
      * @param keyword 段值
      * @return
      */
-    public static Map<String, Object> searchDocHighlight(String type, String fieldName, String keyword) {
-        return ElasticSearchUtilsImp.searchDocHighlight(type, fieldName, keyword, 0, 10);
+    public static Map<String, Object> searchDocHighlight(String type,String indexname, String fieldName, String keyword) {
+        return ElasticSearchUtilsImp.searchDocHighlight(type, indexname,fieldName, keyword, 0, 10);
     }
 
     /**
@@ -105,9 +105,9 @@ public class ElasticSearchUtils {
      * @param size 每页大小
      * @return
      */
-    public static Map<String, Object> searchDocHighlight(String type, String fieldName, String keyword, int from,
+    public static Map<String, Object> searchDocHighlight(String type, String indexname,String fieldName, String keyword, int from,
                                                          int size) {
-        return ElasticSearchUtilsImp.searchDocHighlight(type, fieldName, keyword, from, size);
+        return ElasticSearchUtilsImp.searchDocHighlight(type,indexname, fieldName, keyword, from, size);
     }
 
     /**
@@ -117,9 +117,9 @@ public class ElasticSearchUtils {
      * @param shouldMap or条件和值
      * @return
      */
-    public static Map<String, Object> multiOrSearchDocHigh(String type, Map<String, String> shouldMap, int from,
+    public static Map<String, Object> multiOrSearchDocHigh(String type,String indexname, Map<String, String> shouldMap, int from,
                                                            int size) {
-        return ElasticSearchUtilsImp.multiOrSearchDocHigh(type, shouldMap, from, size);
+        return ElasticSearchUtilsImp.multiOrSearchDocHigh(type,indexname, shouldMap, from, size);
     }
 
     /**
@@ -129,8 +129,8 @@ public class ElasticSearchUtils {
      * @param fieldName 待搜索的字段
      * @param keyword 待搜索的关键词
      */
-    public static Map<String, Object> searchDoc(String type, String fieldName, String keyword) {
-        return ElasticSearchUtilsImp.searchDoc(type, fieldName, keyword, 0, 10);
+    public static Map<String, Object> searchDoc(String type, String indexname,String fieldName, String keyword) {
+        return ElasticSearchUtilsImp.searchDoc(type,indexname, fieldName, keyword, 0, 10);
     }
 
     /**
@@ -140,8 +140,8 @@ public class ElasticSearchUtils {
      * @param shouldMap 进行or查询的段和值
      * @return
      */
-    public static Map<String, Object> multiOrSearchDoc(String type, Map<String, String> shouldMap) {
-        return ElasticSearchUtilsImp.multiOrSearchDoc(type, shouldMap, 0, 10);
+    public static Map<String, Object> multiOrSearchDoc(String type, String indexname, Map<String, String> shouldMap) {
+        return ElasticSearchUtilsImp.multiOrSearchDoc(type,indexname, shouldMap, 0, 10);
     }
 
     /**
@@ -151,7 +151,7 @@ public class ElasticSearchUtils {
      * @param mustMap 进行and查询的段和值
      * @return
      */
-    public static Map<String, Object> multiAndSearchDoc(String type, Map<String, String> mustMap) {
-        return ElasticSearchUtilsImp.multiAndSearchDoc(type, mustMap, 0, 10);
+    public static Map<String, Object> multiAndSearchDoc(String type,  String indexname,Map<String, String> mustMap) {
+        return ElasticSearchUtilsImp.multiAndSearchDoc(type, indexname,mustMap, 0, 10);
     }
 }

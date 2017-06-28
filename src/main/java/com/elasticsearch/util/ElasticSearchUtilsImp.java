@@ -1,22 +1,12 @@
 package com.elasticsearch.util;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.reflect.Method;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.concurrent.ExecutionException;
-
+import org.apache.commons.lang.ObjectUtils;
 import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.text.Text;
@@ -28,33 +18,35 @@ import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
+
 /**
- * @author：Tim
- * @date：2017年5月3日 下午8:24:22
- * @description：ElasticSearch助手类具体实现
+ * Created by Administrator on 2017/6/28.
  */
 public class ElasticSearchUtilsImp {
-
-    private static String cluster_name = null;// 实例名称
-    private static String cluster_serverip = null;// elasticSearch服务器ip
-    private static String indexname = null;// 索引名称
+    private static String clusterName = null;// 实例名称
+    private static String clusterNodes = null;// elasticSearch服务器ip
 
     static {
         try {
             // 读取db.properties文件
             Properties props = new Properties();
-            InputStream in = ElasticSearchUtilsImp.class.getResourceAsStream("/elasticsearch.properties");
+            InputStream in = ElasticSearchUtilsImp.class.getResourceAsStream("/application.properties");
             props.load(in);// 加载文件
 
             // 读取信息
-            cluster_name = props.getProperty("cluster_name");
-            cluster_serverip = props.getProperty("cluster_serverip");
-            indexname = props.getProperty("indexname");
+            clusterName = props.getProperty("elasticsearch.clusterName");
+            clusterNodes = props.getProperty("elasticsearch.clusterNodes");
         } catch (IOException e) {
             e.printStackTrace();
             System.out.println("加载数据库配置文件出错！");
@@ -66,17 +58,20 @@ public class ElasticSearchUtilsImp {
      *
      * @return
      */
-    private static TransportClient getClient() {
-        Settings settings = Settings.builder().put("cluster.name", cluster_name).build();// 设置集群名称
-        @SuppressWarnings("unchecked")
-        TransportClient client = new PreBuiltTransportClient(settings);// 创建client
+    private static Client getClient() {
+        Settings settings = Settings.builder().put("cluster.name", clusterName).build();
+        Client client = new PreBuiltTransportClient(settings);
         try {
-            client.addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(cluster_serverip), 9300));// 增加地址和端口
+            // 读取的ip列表是以逗号分隔的
+            for (String clusterNode : clusterNodes.split(",")) {
+                String ip = clusterNode.split(":")[0];
+                String port = clusterNode.split(":")[1];
+                ((TransportClient) client).addTransportAddress(
+                        new InetSocketTransportAddress(InetAddress.getByName(ip), Integer.parseInt(port)));
+            }
         } catch (UnknownHostException e) {
             e.printStackTrace();
-            System.out.println("ElasticSearch连接失败！");
         }
-
         return client;
     }
 
@@ -89,13 +84,10 @@ public class ElasticSearchUtilsImp {
      */
     private static XContentBuilder createMapJson(Map<String, String> mapParam) throws Exception {
         XContentBuilder source = XContentFactory.jsonBuilder().startObject();
-
         for (Map.Entry<String, String> entry : mapParam.entrySet()) {
             source.field(entry.getKey(), entry.getValue());
         }
-
         source.endObject();
-
         return source;
     }
 
@@ -103,25 +95,23 @@ public class ElasticSearchUtilsImp {
      * 将实体转换成json
      *
      * @param entity 实体
-     * @param fieldNameParm 实体中待转换成json的字段
+     * @param fieldNames 实体中待转换成json的字段
      * @return 返回json
      * @throws Exception
      */
-    private static XContentBuilder createEntityJson(Object entity, String... methodNameParm) throws Exception {
+    private static XContentBuilder createEntityJson(Object entity, String... fieldNames) throws Exception {
         // 创建json对象, 其中一个创建json的方式
         XContentBuilder source = XContentFactory.jsonBuilder().startObject();
-
         try {
-            for (String methodName : methodNameParm) {
+            for (String fieldName : fieldNames) {
 
-                if (!methodName.startsWith("get")) {
-                    throw new Exception("不是有效的属性！");
+                Field field = entity.getClass().getDeclaredField(fieldName);
+
+                if(field == null){
+                    throw new Exception("实体类中无此属性");
                 }
 
-                Method method = entity.getClass().getMethod(methodName, null);
-                String fieldValue = (String) method.invoke(entity, null);
-                String fieldName = StringUtils.toLowerCaseFirstOne(methodName.replace("get", ""));// 去掉“get”，并将首字母小写
-
+                String fieldValue = ObjectUtils.toString(field.get(entity));
                 // 避免和elasticSearch中id字段重复
                 if (fieldName == "_id") {
                     fieldName = "id";
@@ -135,7 +125,6 @@ public class ElasticSearchUtilsImp {
         }
 
         source.endObject();
-
         return source;
     }
 
@@ -147,10 +136,10 @@ public class ElasticSearchUtilsImp {
      * @param mapParam Map格式的数据
      * @return
      */
-    public static boolean addMapDocToIndex(String type, String docId, Map<String, String> mapParam) {
+    public static boolean addMapDocToIndex(String type, String docId, String indexname,Map<String, String> mapParam) {
         boolean result = false;
 
-        TransportClient client = getClient();
+        Client client = getClient();
         XContentBuilder source = null;
         try {
             source = createMapJson(mapParam);
@@ -180,10 +169,8 @@ public class ElasticSearchUtilsImp {
         if (status.getStatus() == 201) {
             result = true;
         }
-
         // 关闭client
         client.close();
-
         return result;
     }
 
@@ -197,17 +184,15 @@ public class ElasticSearchUtilsImp {
      * @param methodNameParm 需要将实体中哪些属性作为字段
      * @return
      */
-    public static boolean addEntityDoc(String type, String docId, Object entity, String... methodNameParm) {
+    public static boolean addEntityDoc(String type, String docId,String indexname, Object entity, String... methodNameParm) {
         boolean result = false;
-
-        TransportClient client = getClient();
+        Client client = getClient();
         XContentBuilder source = null;
         try {
             source = createEntityJson(entity, methodNameParm);
         } catch (Exception e) {
             e.printStackTrace();
         }
-
         // 存json入索引中
         IndexResponse response = null;
         if (docId == null) {
@@ -216,7 +201,6 @@ public class ElasticSearchUtilsImp {
         } else {
             response = client.prepareIndex(indexname, type, docId).setSource(source).get();
         }
-
         // 插入结果获取
         String index = response.getIndex();
         String gettype = response.getType();
@@ -230,10 +214,8 @@ public class ElasticSearchUtilsImp {
         if (status.getStatus() == 201) {
             result = true;
         }
-
         // 关闭client
         client.close();
-
         return result;
     }
 
@@ -244,10 +226,10 @@ public class ElasticSearchUtilsImp {
      * @param docId 类型中id
      * @return
      */
-    public static boolean deleteDoc(String type, String docId) {
+    public static boolean deleteDoc(String type, String docId,String indexname) {
         boolean result = false;
 
-        TransportClient client = getClient();
+        Client client = getClient();
         DeleteResponse deleteresponse = client.prepareDelete(indexname, type, docId).get();
 
         System.out.println("删除结果：" + deleteresponse.getResult().toString());
@@ -257,7 +239,6 @@ public class ElasticSearchUtilsImp {
 
         // 关闭client
         client.close();
-
         return result;
     }
 
@@ -269,11 +250,11 @@ public class ElasticSearchUtilsImp {
      * @param updateParam 需要修改的字段和值
      * @return
      */
-    public static boolean updateDoc(String type, String docId, Map<String, String> updateParam) {
+    public static boolean updateDoc(String type, String docId,String indexname, Map<String, String> updateParam) {
         String strResult = "";
         boolean result = false;
 
-        TransportClient client = getClient();
+        Client client = getClient();
 
         UpdateRequest updateRequest = new UpdateRequest();
         updateRequest.index(indexname);
@@ -301,18 +282,6 @@ public class ElasticSearchUtilsImp {
     }
 
     /**
-     * TODO or查询命中条数
-     * @param type 类型
-     * @param shouldMap 查询条件
-     * @return
-     */
-    public static int multiOrSearchDocCount(String type, Map<String, String> shouldMap) {
-        TransportClient client = getClient();
-
-        return 0;
-    }
-
-    /**
      * 高亮搜索
      *
      * @param type 类型
@@ -322,9 +291,9 @@ public class ElasticSearchUtilsImp {
      * @param size 每页大小
      * @return
      */
-    public static Map<String, Object> searchDocHighlight(String type, String fieldName, String keyword, int from,
+    public static Map<String, Object> searchDocHighlight(String type, String indexname,String fieldName, String keyword, int from,
                                                          int size) {
-        TransportClient client = getClient();
+        Client client = getClient();
 
         // 高亮
         HighlightBuilder hiBuilder = new HighlightBuilder();
@@ -380,9 +349,9 @@ public class ElasticSearchUtilsImp {
      * @param size 每页大小
      * @return
      */
-    public static Map<String, Object> multiOrSearchDocHigh(String type, Map<String, String> shouldMap, int from,
+    public static Map<String, Object> multiOrSearchDocHigh(String type,String indexname, Map<String, String> shouldMap, int from,
                                                            int size) {
-        TransportClient client = getClient();
+       Client client = getClient();
 
         SearchRequestBuilder responsebuilder = client.prepareSearch(indexname).setTypes(type);
         responsebuilder.setFrom(from);
@@ -455,10 +424,10 @@ public class ElasticSearchUtilsImp {
      * @param size 每页大小
      * @return
      */
-    public static Map<String, Object> searchDoc(String type, String fieldName, String keyword, int from, int size) {
+    public static Map<String, Object> searchDoc(String type,String indexname, String fieldName, String keyword, int from, int size) {
         List<String> hitResult = new ArrayList<String>();
 
-        TransportClient client = getClient();
+        Client client = getClient();
 
         QueryBuilder queryBuilder = QueryBuilders.matchPhraseQuery(fieldName, keyword);
 
@@ -491,10 +460,10 @@ public class ElasticSearchUtilsImp {
      * @param size 每页大小
      * @return
      */
-    public static Map<String, Object> multiOrSearchDoc(String type, Map<String, String> shouldMap, int from, int size) {
+    public static Map<String, Object> multiOrSearchDoc(String type,String indexname, Map<String, String> shouldMap, int from, int size) {
         List<String> hitResult = new ArrayList<String>();
 
-        TransportClient client = getClient();
+        Client client = getClient();
 
         SearchRequestBuilder responsebuilder = client.prepareSearch(indexname).setTypes(type);
         responsebuilder.setFrom(from);
@@ -536,10 +505,10 @@ public class ElasticSearchUtilsImp {
      * @param size 每页大小
      * @return
      */
-    public static Map<String, Object> multiAndSearchDoc(String type, Map<String, String> mustMap, int from, int size) {
+    public static Map<String, Object> multiAndSearchDoc(String type,String indexname, Map<String, String> mustMap, int from, int size) {
         List<String> hitResult = new ArrayList<String>();
 
-        TransportClient client = getClient();
+        Client client = getClient();
 
         SearchRequestBuilder responsebuilder = client.prepareSearch(indexname).setTypes(type);
         responsebuilder.setFrom(from);
@@ -571,5 +540,4 @@ public class ElasticSearchUtilsImp {
 
         return modelMap;
     }
-}
 }
