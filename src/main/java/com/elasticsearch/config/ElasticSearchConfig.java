@@ -1,7 +1,6 @@
 package com.elasticsearch.config;
 
 import org.elasticsearch.client.Client;
-import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
@@ -33,7 +32,7 @@ public class ElasticSearchConfig {
             for (String clusterNode : this.clusterNodes.split(",")) {
                 String ip = clusterNode.split(":")[0];
                 String port = clusterNode.split(":")[1];
-                ((TransportClient) client).addTransportAddress(
+                ((PreBuiltTransportClient) client).addTransportAddress(
                         new InetSocketTransportAddress(InetAddress.getByName(ip), Integer.parseInt(port)));
             }
         } catch (UnknownHostException e) {

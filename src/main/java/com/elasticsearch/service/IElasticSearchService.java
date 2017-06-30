@@ -63,7 +63,7 @@ public interface IElasticSearchService {
      * @param updateParam 需要修改的字段和值
      * @return
      */
-    public boolean updateDoc(String type, String docId,String indexname, Map<String, String> updateParam);
+    public boolean updateDoc(String type, String docId,String indexname, Map<String, String> updateParam) throws Exception;
 
     // --------------------以下是各种搜索方法--------------------------
 

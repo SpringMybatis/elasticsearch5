@@ -4,7 +4,7 @@ package com.elasticsearch.util;
 import java.util.Map;
 
 /**
- * @author：Tim
+ * @author：lierl
  * @date：2017年5月3日 下午8:24:22
  * @description：ElasticSearch助手类
  */

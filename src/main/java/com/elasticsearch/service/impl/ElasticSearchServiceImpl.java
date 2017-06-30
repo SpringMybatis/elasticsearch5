@@ -1,11 +1,15 @@
 package com.elasticsearch.service.impl;
 
 import com.elasticsearch.service.IElasticSearchService;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.ObjectUtils;
 import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchType;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.text.Text;
@@ -22,8 +26,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -39,7 +41,7 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
 
     /**
      * 将Map转换成builder
-     *
+     *c
      * @param mapParam
      * @return
      * @throws Exception
@@ -68,21 +70,41 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
         // 创建json对象, 其中一个创建json的方式
         XContentBuilder source = XContentFactory.jsonBuilder().startObject();
         try {
-            for (String fieldName : fieldNames) {
+            if(ArrayUtils.isNotEmpty(fieldNames)) {
+                for (String fieldName : fieldNames) {
+                    Field field = entity.getClass().getDeclaredField(fieldName);
 
-                Field field = entity.getClass().getDeclaredField(fieldName);
+                    if (field == null) {
+                        throw new Exception("实体类中无此属性");
+                    }
 
-                if(field == null){
-                    throw new Exception("实体类中无此属性");
+                    String fieldValue = ObjectUtils.toString(field.get(entity));
+                    // 避免和elasticSearch中id字段重复
+                    if (fieldName == "_id") {
+                        fieldName = "id";
+                    }
+
+                    source.field(fieldName, fieldValue);
+                }
+            }else{
+                Field[] fields = entity.getClass().getDeclaredFields();
+                if(fields.length == 0){
+                    throw new Exception("实体类无属性");
                 }
 
-                String fieldValue = ObjectUtils.toString(field.get(entity));
-                // 避免和elasticSearch中id字段重复
-                if (fieldName == "_id") {
-                    fieldName = "id";
-                }
+                for (Field field : fields) {
 
-                source.field(fieldName, fieldValue);
+                    String fieldName = field.getName();
+
+                    String fieldValue = ObjectUtils.toString(field.get(entity));
+                    // 避免和elasticSearch中id字段重复
+                    if (fieldName == "_id") {
+                        fieldName = "id";
+                    }
+
+                    source.field(fieldName, fieldValue);
+
+                }
             }
         } catch (NoSuchMethodException e) {
             e.printStackTrace();
@@ -90,7 +112,6 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
         }
 
         source.endObject();
-
         return source;
     }
 
@@ -137,7 +158,6 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
 
         // 关闭client
         client.close();
-
         return result;
     }
 
@@ -148,15 +168,15 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
      * @param type 类型（对应数据库表）
      * @param docId id，对应elasticSearch中的_id字段
      * @param entity 要插入的实体
-     * @param methodNameParm 需要将实体中哪些属性作为字段
+     * @param fieldNames 需要将实体中哪些属性作为字段,可以传递 ""来表示所有的属性都作为字段添加到es中
      * @return
      */
-    public boolean addEntityDoc(String type, String docId,String indexname, Object entity, String... methodNameParm) {
+    public boolean addEntityDoc(String type, String docId,String indexname, Object entity, String... fieldNames) {
         boolean result = false;
 
         XContentBuilder source = null;
         try {
-            source = createEntityJson(entity, methodNameParm);
+            source = createEntityJson(entity, fieldNames);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -177,7 +197,8 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
         long version = response.getVersion();
         RestStatus status = response.status();
 
-        String strResult = "新增文档成功：" + index + " : " + gettype + ": " + id + ": " + version + ": " + status.getStatus();
+        String strResult = "新增文档成功：" + index + " : " + gettype + ": " + id + ": " + version
+                + ": " + status.getStatus();
         System.out.println(strResult);
 
         if (status.getStatus() == 201) {
@@ -221,16 +242,23 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
      * @param updateParam 需要修改的字段和值
      * @return
      */
-    public boolean updateDoc(String type, String docId,String indexname, Map<String, String> updateParam) {
+    public boolean updateDoc(String type, String docId,String indexname, Map<String, String> updateParam) throws Exception {
         String strResult = "";
         boolean result = false;
+
+        //设置查询条件, 查找不到则添加生效
+
+        //IndexRequest indexRequest = new IndexRequest(indexname,type,docId).source(createMapJson(updateParam));
+
 
         UpdateRequest updateRequest = new UpdateRequest();
         updateRequest.index(indexname);
         updateRequest.type(type);
         updateRequest.id(docId);
         try {
-            updateRequest.doc(createMapJson(updateParam));
+            XContentBuilder json = createMapJson(updateParam);//需要更新的数据
+            updateRequest.doc(json);
+                    //.upsert(indexRequest);//查找不到则更新
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -281,9 +309,9 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
 
         // 总命中数
         long total = searchHits.getTotalHits();
-        Map<String, Object> map = new HashMap<String, Object>();
+        Map<String, Object> map = Maps.newHashMap();
         map.put("total", total);
-        List<Map<String, Object>> list = new ArrayList<Map<String, Object>>();
+        List<Map<String, Object>> list = Lists.newArrayList();
 
         for (int i = 0; i < searchHits.getHits().length; i++) {
             Map<String, HighlightField> highlightFields = searchHits.getHits()[i].getHighlightFields();
@@ -352,9 +380,9 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
 
         // 总命中数
         long total = searchHits.getTotalHits();
-        Map<String, Object> map = new HashMap<String, Object>();
+        Map<String, Object> map = Maps.newHashMap();
         map.put("total", total);
-        List<Map<String, Object>> list = new ArrayList<Map<String, Object>>();
+        List<Map<String, Object>> list = Lists.newArrayList();
         for (int i = 0; i < searchHits.getHits().length; i++) {
             Map<String, HighlightField> highlightFields = searchHits.getHits()[i].getHighlightFields();
             Map<String, Object> source = searchHits.getHits()[i].getSource();
@@ -390,7 +418,7 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
      * @return
      */
     public Map<String, Object> searchDoc(String type,String indexname, String fieldName, String keyword, int from, int size) {
-        List<String> hitResult = new ArrayList<String>();
+        List<String> hitResult = Lists.newArrayList();
 
         QueryBuilder queryBuilder = QueryBuilders.matchPhraseQuery(fieldName, keyword);
 
@@ -407,7 +435,7 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
         }
 
         // 将命中结果转换成Map输出
-        Map<String, Object> modelMap = new HashMap<String, Object>(2);
+        Map<String, Object> modelMap = Maps.newHashMapWithExpectedSize(2);
         modelMap.put("total", hitResult.size());
         modelMap.put("rows", hitResult);
 
@@ -424,7 +452,7 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
      * @return
      */
     public Map<String, Object> multiOrSearchDoc(String type,String indexname, Map<String, String> shouldMap, int from, int size) {
-        List<String> hitResult = new ArrayList<String>();
+        List<String> hitResult = Lists.newArrayList();
 
         SearchRequestBuilder responsebuilder = client.prepareSearch(indexname).setTypes(type);
         responsebuilder.setFrom(from);
@@ -450,7 +478,7 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
         }
 
         // 将命中结果转换成Map输出
-        Map<String, Object> modelMap = new HashMap<String, Object>(2);
+        Map<String, Object> modelMap = Maps.newHashMapWithExpectedSize(2);
         modelMap.put("total", hitResult.size());
         modelMap.put("rows", hitResult);
 
@@ -467,11 +495,16 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
      * @return
      */
     public Map<String, Object> multiAndSearchDoc(String type,String indexname, Map<String, String> mustMap, int from, int size) {
-        List<String> hitResult = new ArrayList<String>();
+        List<String> hitResult = Lists.newArrayList();
 
         SearchRequestBuilder responsebuilder = client.prepareSearch(indexname).setTypes(type);
-        responsebuilder.setFrom(from);
-        responsebuilder.setSize(size);
+        //设置查询类型
+        responsebuilder.setSearchType(SearchType.DFS_QUERY_THEN_FETCH);
+        //设置分页信息
+        responsebuilder.setFrom(from).setSize(size);
+        //按照某属性排序
+//        responsebuilder.addSort("", SortOrder.ASC);
+        // 设置是否按查询匹配度排序
         responsebuilder.setExplain(true);
 
         if (null != mustMap && mustMap.size() > 0) {
@@ -488,12 +521,13 @@ public class ElasticSearchServiceImpl implements IElasticSearchService {
 
         SearchResponse myresponse = responsebuilder.execute().actionGet();
         SearchHits hits = myresponse.getHits();
+        hits.getTotalHits();//总数
         for (int i = 0; i < hits.getHits().length; i++) {
             hitResult.add(hits.getHits()[i].getSourceAsString());
         }
 
         // 将命中结果转换成Map输出
-        Map<String, Object> modelMap = new HashMap<String, Object>(2);
+        Map<String, Object> modelMap = Maps.newHashMapWithExpectedSize(2);
         modelMap.put("total", hitResult.size());
         modelMap.put("rows", hitResult);
 
